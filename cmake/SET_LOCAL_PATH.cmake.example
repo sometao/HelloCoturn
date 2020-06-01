@@ -1,0 +1,41 @@
+
+
+
+if(WIN32)
+	message(" ===================== SET PATH FOR WIN32 ======================")
+
+
+	set(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH}
+		"C:/usr/local/include"
+	)
+
+	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
+	 	"C:/usr/local/lib"
+	)
+
+	if(BUILD_DEBUG) 
+		set(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH}
+			"C:/Botan-all-debug/include/botan-2"
+		)
+		set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
+			"C:/Botan-all-debug/lib" 
+		)
+	else()
+		set(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH}
+			"C:/Botan-all/include"
+		)
+		set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
+			"C:/Botan-all/lib" 
+		)
+	endif()
+
+
+elseif(UNIX)
+	message(" ===================== SET PATH FOR UNIX ======================")
+	set(CMAKE_INCLUDE_PATH  "/usr/local/include/botan-2")
+else()
+	message(FATAL_ERROR " ===================== UNKNOWN OS ======================")
+endif()
+
+
+

@@ -1,0 +1,14 @@
+#pragma once
+
+
+#define APP_VERSION_MAJOR @HelloCoturn_VERSION_MAJOR@
+#define APP_VERSION_MINOR @HelloCoturn_VERSION_MINOR@
+
+#cmakedefine BOOST_DATE_TIME_NO_LIB
+#cmakedefine BOOST_REGEX_NO_LIB
+
+#cmakedefine SPDLOG_ACTIVE_LEVEL @SPDLOG_ACTIVE_LEVEL@
+#cmakedefine LOG_FILE_NAME "@LOG_FILE_NAME@"
+
+#cmakedefine CA_CERT_FILE "@CA_CERT_FILE@"
+
