@@ -213,7 +213,10 @@ class MessageBuilder {
  public:
   void setMethod(StunMethod method) { msgMethod = method; }
   void setClass(StunClass clz) { msgClass = clz; }
+
   void setAttr_REQUESTED_TRANSPORT(){};
+  //TODO normal attribute sets.
+  //TODO continue here.
 
   std::vector<uint8_t> buildMsg() { std::vector<uint8_t> msgData(1024); };
 };
