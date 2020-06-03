@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include "asio.hpp"
+#include "MessageBuilder.h"
 
 
 using asio::ip::udp;
