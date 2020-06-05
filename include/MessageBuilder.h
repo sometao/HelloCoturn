@@ -2,6 +2,10 @@
 #include <vector>
 #include <unordered_map>
 #include "seeker/common.h"
+#include "hash/hmac.h"
+#include "hash/crc32.h"
+#include "hash/md5.h"
+#include "hash/sha1.h"
 /*
 
 0                   1                   2                   3
@@ -98,8 +102,41 @@ class MessageBuilder {
 
   std::unordered_map<uint16_t, vector<uint8_t>> attributes;
 
+  std::string username;
+  std::string password;
+  std::string realm;
 
-  static uint16_t paddingLength(uint16_t len) {
+  //TODO need test.
+  void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t* out) {
+    MD5 md5;
+    std::vector<uint8_t> passwordVector(password.size());
+    if(ByteArray::SASLprep((uint8_t*)password.c_str(), passwordVector.data()) < 0) {
+      throw std::exception("password SASLprep failed.");
+    }
+
+    //key = MD5(username ":" realm ":" SASLprep(password))
+    string keyStr{};
+    keyStr += username;
+    keyStr += ":";
+    keyStr += realm;
+    keyStr += ":";
+    keyStr += (char *)passwordVector.data();
+
+    md5.reset();
+    md5.add(keyStr.c_str(), keyStr.size());
+    uint8_t key[16];
+    md5.getHash(key);
+    //out length must be 20 bytes.
+    hmac<SHA1>(data, len, key, 16, out);
+  }
+  
+
+  //TODO tobe continue.
+  static uint32_t genFingerprint() {
+    
+  }
+
+  static uint8_t paddingLength(uint16_t len) {
     uint16_t padding = 4 - (len % 4);
     padding = padding == 4 ? 0 : padding;
     return padding;
@@ -126,6 +163,24 @@ class MessageBuilder {
     ByteArray::writeData(dataBuf + 16, transactionId_p3);
   }
 
+  uint16_t calcMsgLength() {
+    uint16_t len = headerLength;
+
+    for (auto& attr : attributes) {
+      auto attrLen = attr.second.size();
+      uint8_t padding = paddingLength(attrLen);
+      len += ( 2 + 2 + attrLen + padding );
+    }
+
+    if (messageIntegrityEnable) {
+      len += (2 + 2 + 20 + 0);
+    }
+
+    if (fingerprintEnable) {
+      len += (2 + 2 + 4 + 0);
+    }
+  }
+
   void writeAttributes(std::vector<uint8_t>& msgData) {
     auto dataBuf = msgData.data();
 
@@ -135,7 +190,7 @@ class MessageBuilder {
       uint16_t t = pair.first;
       vector<uint8_t> v = pair.second;
       uint16_t len = (uint16_t)v.size();
-      int padding = paddingLength(len);
+      uint8_t padding = paddingLength(len);
 
       ByteArray::writeData(bodyBuf + pos, t);
       pos += sizeof(t);
@@ -158,10 +213,12 @@ class MessageBuilder {
       ByteArray::writeData(dataBuf + 2, dummyMsgLength);
       uint8_t messageIntegrityValue[20];
 
-      //TODO calculate messageIntegrityValue;
 
-      uint16_t t = (uint16_t) StunAttributeType::MESSAGE_INTEGRITY;
-      uint16_t len = (uint16_t) 20;
+
+      // TODO calculate messageIntegrityValue;
+
+      uint16_t t = (uint16_t)StunAttributeType::MESSAGE_INTEGRITY;
+      uint16_t len = (uint16_t)20;
 
       ByteArray::writeData(bodyBuf + pos, t);
       pos += sizeof(t);
@@ -171,16 +228,16 @@ class MessageBuilder {
       pos += len;
     }
 
-    if(fingerprintEnable) {
+    if (fingerprintEnable) {
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
       uint16_t msgLength = headerLength + pos + fingerprintAttrLength;
       ByteArray::writeData(dataBuf + 2, msgLength);
 
       uint32_t fingerprintValue;
-      //TODO calculate fingerprintValue;
+      // TODO calculate fingerprintValue;
 
-      uint16_t t = (uint16_t) StunAttributeType::FINGERPRINT;
-      uint16_t len = (uint16_t) sizeof(fingerprintValue);
+      uint16_t t = (uint16_t)StunAttributeType::FINGERPRINT;
+      uint16_t len = (uint16_t)sizeof(fingerprintValue);
 
       ByteArray::writeData(bodyBuf + pos, t);
       pos += sizeof(t);
@@ -188,6 +245,8 @@ class MessageBuilder {
       pos += sizeof(len);
       ByteArray::writeData(bodyBuf + pos, fingerprintValue);
       pos += len;
+
+
     } else {
       uint16_t msgLength = headerLength + pos;
       ByteArray::writeData(dataBuf + 2, msgLength);
@@ -215,10 +274,15 @@ class MessageBuilder {
   void setClass(StunClass clz) { msgClass = clz; }
 
   void setAttr_REQUESTED_TRANSPORT(){};
-  //TODO normal attribute sets.
-  //TODO continue here.
+  // TODO normal attribute sets.
+  // TODO continue here.
 
-  std::vector<uint8_t> buildMsg() { std::vector<uint8_t> msgData(1024); };
+  std::vector<uint8_t> buildMsg() { 
+    std::vector<uint8_t> msgData(calcMsgLength()); 
+    writeHeader(msgData);
+    writeAttributes(msgData);
+    return msgData;
+  };
 };
 
 

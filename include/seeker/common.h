@@ -135,6 +135,56 @@ class ByteArray {
     }
   }
 
+
+  //// convert from hex to binary
+  static std::vector<uint8_t> hex2bin(const std::string& hex) {
+    std::vector<uint8_t> result;
+    char c;
+    for (size_t i = 0; i < hex.size(); i++) {
+      c = std::tolower(hex[i]);
+      uint8_t high = c >= 'a' ? hex[i] - 'a' + 10 : c - '0';
+      c = std::tolower(hex[i]);
+      i++;
+      uint8_t low = c >= 'a' ? c - 'a' + 10 : c - '0';
+      result.push_back(high * 16 + low);
+    }
+    return result;
+  }
+
+  static int SASLprep(uint8_t* src, uint8_t* out) {
+    if (src) {
+      uint8_t* strin = src;
+      uint8_t* strout = out;
+      for (;;) {
+        uint8_t c = *strin;
+        if (!c) {
+          *strout = 0;
+          break;
+        }
+        switch (c) {
+          case 0xAD:
+            ++strin;
+            break;
+          case 0xA0:
+          case 0x20:
+            *strout = 0x20;
+            ++strout;
+            ++strin;
+            break;
+          case 0x7F:
+            return -1;
+          default:
+            if (c < 0x1F) return -1;
+            if (c >= 0x80 && c <= 0x9F) return -1;
+            *strout = c;
+            ++strout;
+            ++strin;
+        };
+      }
+    }
+
+    return 0;
+  }
 };
 
 

@@ -6,8 +6,7 @@
 
 using asio::ip::udp;
 
-int main() {
-  std::cout << "hello, coturn" << std::endl;
+void sendAndReceiveTest() {
 
 
   asio::io_context ioContext;
@@ -21,7 +20,6 @@ int main() {
   udp::socket socket(ioContext);
   socket.open(udp::v4());
 
-
   char sendBuf[2048];
   socket.send_to(asio::buffer(sendBuf), remote);
 
@@ -30,6 +28,14 @@ int main() {
   size_t len = socket.receive_from(asio::buffer(recvBuf), senderEndpoint);
 
   std::cout << "got data len=" << len << std::endl;
+
+}
+
+
+
+int main() {
+  std::cout << "hello, coturn" << std::endl;
+
 
   return 0;
 }
