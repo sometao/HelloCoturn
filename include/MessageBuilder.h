@@ -98,7 +98,7 @@ class MessageBuilder {
 
   const uint16_t headerLength = 20;
   const uint32_t magicCookie = 0x2112A442;
-  const uint32_t fingerprintCookie = 0x5354554e;
+  const uint8_t fingerprintCookie[4] = {0x53, 0x54, 0x55, 0x4e};
 
   std::unordered_map<uint16_t, vector<uint8_t>> attributes;
 
@@ -106,35 +106,33 @@ class MessageBuilder {
   std::string password;
   std::string realm;
 
-  //TODO need test.
+  // TODO need test.
   void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t* out) {
     MD5 md5;
     std::vector<uint8_t> passwordVector(password.size());
-    if(ByteArray::SASLprep((uint8_t*)password.c_str(), passwordVector.data()) < 0) {
+    if (ByteArray::SASLprep((uint8_t*)password.c_str(), passwordVector.data()) < 0) {
       throw std::exception("password SASLprep failed.");
     }
 
-    //key = MD5(username ":" realm ":" SASLprep(password))
+    // key = MD5(username ":" realm ":" SASLprep(password))
     string keyStr{};
     keyStr += username;
     keyStr += ":";
     keyStr += realm;
     keyStr += ":";
-    keyStr += (char *)passwordVector.data();
+    keyStr += (char*)passwordVector.data();
 
     md5.reset();
     md5.add(keyStr.c_str(), keyStr.size());
     uint8_t key[16];
     md5.getHash(key);
-    //out length must be 20 bytes.
+    // out length must be 20 bytes.
     hmac<SHA1>(data, len, key, 16, out);
   }
-  
 
-  //TODO tobe continue.
-  static uint32_t genFingerprint() {
-    
-  }
+
+  // TODO tobe continue.
+  static uint32_t genFingerprint() {}
 
   static uint8_t paddingLength(uint16_t len) {
     uint16_t padding = 4 - (len % 4);
@@ -157,7 +155,7 @@ class MessageBuilder {
     uint16_t msgType = getMsgType();
     auto dataBuf = msgData.data();
     ByteArray::writeData(dataBuf + 0, msgType);
-    ByteArray::writeData(dataBuf + 4, magicCookie);
+    ByteArray::writeData(dataBuf + 4, magicCookie, false);
     ByteArray::writeData(dataBuf + 8, transactionId_p1);
     ByteArray::writeData(dataBuf + 12, transactionId_p2);
     ByteArray::writeData(dataBuf + 16, transactionId_p3);
@@ -169,7 +167,7 @@ class MessageBuilder {
     for (auto& attr : attributes) {
       auto attrLen = attr.second.size();
       uint8_t padding = paddingLength(attrLen);
-      len += ( 2 + 2 + attrLen + padding );
+      len += (2 + 2 + attrLen + padding);
     }
 
     if (messageIntegrityEnable) {
@@ -192,10 +190,10 @@ class MessageBuilder {
       uint16_t len = (uint16_t)v.size();
       uint8_t padding = paddingLength(len);
 
-      ByteArray::writeData(bodyBuf + pos, t);
+      ByteArray::writeData(bodyBuf + pos, t, false);
       pos += sizeof(t);
 
-      ByteArray::writeData(bodyBuf + pos, len);
+      ByteArray::writeData(bodyBuf + pos, len, false);
       pos += sizeof(len);
 
       ByteArray::writeData(bodyBuf + pos, v.data(), len);
@@ -213,37 +211,45 @@ class MessageBuilder {
       ByteArray::writeData(dataBuf + 2, dummyMsgLength);
       uint8_t messageIntegrityValue[20];
 
-
-
       // TODO calculate messageIntegrityValue;
 
       uint16_t t = (uint16_t)StunAttributeType::MESSAGE_INTEGRITY;
       uint16_t len = (uint16_t)20;
 
-      ByteArray::writeData(bodyBuf + pos, t);
+      ByteArray::writeData(bodyBuf + pos, t, false);
       pos += sizeof(t);
-      ByteArray::writeData(bodyBuf + pos, len);
+      ByteArray::writeData(bodyBuf + pos, len, false);
       pos += sizeof(len);
       ByteArray::writeData(bodyBuf + pos, messageIntegrityValue, len);
       pos += len;
     }
 
-    if (fingerprintEnable) {
+    if (fingerprintEnable) {//TODO crc32 need test
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
       uint16_t msgLength = headerLength + pos + fingerprintAttrLength;
-      ByteArray::writeData(dataBuf + 2, msgLength);
+      ByteArray::writeData(dataBuf + 2, msgLength, false);
 
-      uint32_t fingerprintValue;
-      // TODO calculate fingerprintValue;
+      unsigned char fingerprint[4];
+
+      CRC32 crc32Hasher;
+
+      crc32Hasher.add(dataBuf, headerLength + pos);
+      crc32Hasher.getHash(fingerprint);
+
+      fingerprint[0] = fingerprint[0] ^ fingerprintCookie[0];
+      fingerprint[1] = fingerprint[1] ^ fingerprintCookie[1];
+      fingerprint[2] = fingerprint[2] ^ fingerprintCookie[2];
+      fingerprint[3] = fingerprint[3] ^ fingerprintCookie[3];
+
 
       uint16_t t = (uint16_t)StunAttributeType::FINGERPRINT;
-      uint16_t len = (uint16_t)sizeof(fingerprintValue);
+      uint16_t len = (uint16_t)sizeof(fingerprint);
 
       ByteArray::writeData(bodyBuf + pos, t);
       pos += sizeof(t);
       ByteArray::writeData(bodyBuf + pos, len);
       pos += sizeof(len);
-      ByteArray::writeData(bodyBuf + pos, fingerprintValue);
+      ByteArray::writeData(bodyBuf + pos, fingerprint);
       pos += len;
 
 
@@ -277,8 +283,8 @@ class MessageBuilder {
   // TODO normal attribute sets.
   // TODO continue here.
 
-  std::vector<uint8_t> buildMsg() { 
-    std::vector<uint8_t> msgData(calcMsgLength()); 
+  std::vector<uint8_t> buildMsg() {
+    std::vector<uint8_t> msgData(calcMsgLength());
     writeHeader(msgData);
     writeAttributes(msgData);
     return msgData;
@@ -291,7 +297,6 @@ class StunMessage {
  private:
   uint8_t* header;
   uint8_t* body;
-
 
   vector<uint8_t> attrRequestedTransport;
 
