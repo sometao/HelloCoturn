@@ -105,14 +105,13 @@ class ByteArray {
   template <typename T>
   static void writeData(uint8_t* buf, T num, bool littleEndian = true) {
     size_t len(sizeof(T));
-
     if (littleEndian) {
       for (size_t i = 0; i < len; ++i) {
         buf[i] = (uint8_t)((num >> (i * 8)) & 0xFF);
       }
-    } else { // not tested.
-      for (size_t i = len - 1; i >= 0; --i) {
-        buf[i] = (uint8_t)((num >> (i * 8)) & 0xFF);
+    } else { 
+      for (size_t i = 0; i < len; ++i) {
+        buf[i] = (uint8_t)((num >> ((len - i - 1) * 8)) & 0xFF);
       }
     }
   }

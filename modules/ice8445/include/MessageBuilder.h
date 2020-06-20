@@ -2,10 +2,10 @@
 #include <vector>
 #include <unordered_map>
 #include "seeker/common.h"
-#include "hash/hmac.h"
-#include "hash/crc32.h"
-#include "hash/md5.h"
-#include "hash/sha1.h"
+#include "hmac.h"
+#include "crc32.h"
+#include "md5.h"
+#include "sha1.h"
 /*
 
 0                   1                   2                   3
@@ -89,16 +89,13 @@ class MessageBuilder {
  private:
   StunMethod msgMethod;
   StunClass msgClass;
-  uint32_t transactionId_p1;
-  uint32_t transactionId_p2;
-  uint32_t transactionId_p3;
+  uint32_t transactionId[3] = {0, 0, 0};
 
   bool fingerprintEnable;
   bool messageIntegrityEnable;
 
   const uint16_t headerLength = 20;
   const uint32_t magicCookie = 0x2112A442;
-  const uint8_t fingerprintCookie[4] = {0x53, 0x54, 0x55, 0x4e};
 
   std::unordered_map<uint16_t, vector<uint8_t>> attributes;
 
@@ -107,7 +104,7 @@ class MessageBuilder {
   std::string realm;
 
   // TODO need test.
-  void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t* out) {
+  void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20]) {
     MD5 md5;
     std::vector<uint8_t> passwordVector(password.size());
     if (ByteArray::SASLprep((uint8_t*)password.c_str(), passwordVector.data()) < 0) {
@@ -131,8 +128,20 @@ class MessageBuilder {
   }
 
 
-  // TODO tobe continue.
-  static uint32_t genFingerprint() {}
+  static void genFingerprint(const uint8_t* data, size_t len, uint8_t fingerprint[4]) {
+    static uint8_t fingerprintCookie[4] = {0x53, 0x54, 0x55, 0x4e};
+
+    CRC32 crc32Hasher;
+
+    crc32Hasher.add(data, len);
+    crc32Hasher.getHash(fingerprint);
+
+    fingerprint[0] = fingerprint[0] ^ fingerprintCookie[0];
+    fingerprint[1] = fingerprint[1] ^ fingerprintCookie[1];
+    fingerprint[2] = fingerprint[2] ^ fingerprintCookie[2];
+    fingerprint[3] = fingerprint[3] ^ fingerprintCookie[3];
+  }
+
 
   static uint8_t paddingLength(uint16_t len) {
     uint16_t padding = 4 - (len % 4);
@@ -141,6 +150,14 @@ class MessageBuilder {
   }
 
   void addAttr(StunAttributeType attrType, const uint8_t* data, const size_t len) {
+    if (attrType == StunAttributeType::FINGERPRINT ||
+        attrType == StunAttributeType::MESSAGE_INTEGRITY) {
+      throw std::runtime_error(
+          "FINGERPRINT and MESSAGE_INTEGRITY attributes can not be added by user, they are "
+          "auto "
+          "generated.");
+    }
+
     uint16_t typeCode = (uint16_t)attrType;
     if (attributes.find(typeCode) == attributes.end()) {
       std::vector<uint8_t> vec(len);
@@ -156,9 +173,9 @@ class MessageBuilder {
     auto dataBuf = msgData.data();
     ByteArray::writeData(dataBuf + 0, msgType);
     ByteArray::writeData(dataBuf + 4, magicCookie, false);
-    ByteArray::writeData(dataBuf + 8, transactionId_p1);
-    ByteArray::writeData(dataBuf + 12, transactionId_p2);
-    ByteArray::writeData(dataBuf + 16, transactionId_p3);
+    ByteArray::writeData(dataBuf + 8, transactionId[0], false);
+    ByteArray::writeData(dataBuf + 12, transactionId[1], false);
+    ByteArray::writeData(dataBuf + 16, transactionId[2], false);
   }
 
   uint16_t calcMsgLength() {
@@ -177,6 +194,7 @@ class MessageBuilder {
     if (fingerprintEnable) {
       len += (2 + 2 + 4 + 0);
     }
+    return len;
   }
 
   void writeAttributes(std::vector<uint8_t>& msgData) {
@@ -211,7 +229,7 @@ class MessageBuilder {
       ByteArray::writeData(dataBuf + 2, dummyMsgLength);
       uint8_t messageIntegrityValue[20];
 
-      // TODO calculate messageIntegrityValue;
+      genMessageIntegrity(bodyBuf, headerLength + pos, messageIntegrityValue);
 
       uint16_t t = (uint16_t)StunAttributeType::MESSAGE_INTEGRITY;
       uint16_t len = (uint16_t)20;
@@ -224,23 +242,14 @@ class MessageBuilder {
       pos += len;
     }
 
-    if (fingerprintEnable) {//TODO crc32 need test
+    if (fingerprintEnable) {  // TODO crc32 need test
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
       uint16_t msgLength = headerLength + pos + fingerprintAttrLength;
       ByteArray::writeData(dataBuf + 2, msgLength, false);
 
       unsigned char fingerprint[4];
 
-      CRC32 crc32Hasher;
-
-      crc32Hasher.add(dataBuf, headerLength + pos);
-      crc32Hasher.getHash(fingerprint);
-
-      fingerprint[0] = fingerprint[0] ^ fingerprintCookie[0];
-      fingerprint[1] = fingerprint[1] ^ fingerprintCookie[1];
-      fingerprint[2] = fingerprint[2] ^ fingerprintCookie[2];
-      fingerprint[3] = fingerprint[3] ^ fingerprintCookie[3];
-
+      genFingerprint(dataBuf, headerLength + pos, fingerprint);
 
       uint16_t t = (uint16_t)StunAttributeType::FINGERPRINT;
       uint16_t len = (uint16_t)sizeof(fingerprint);
@@ -249,7 +258,7 @@ class MessageBuilder {
       pos += sizeof(t);
       ByteArray::writeData(bodyBuf + pos, len);
       pos += sizeof(len);
-      ByteArray::writeData(bodyBuf + pos, fingerprint);
+      ByteArray::writeData(bodyBuf + pos, fingerprint, len);
       pos += len;
 
 
@@ -279,9 +288,65 @@ class MessageBuilder {
   void setMethod(StunMethod method) { msgMethod = method; }
   void setClass(StunClass clz) { msgClass = clz; }
 
-  void setAttr_REQUESTED_TRANSPORT(){};
-  // TODO normal attribute sets.
-  // TODO continue here.
+
+  void setFingerprint(bool enable) { fingerprintEnable = enable; }
+
+  void setMessageIntegrity(bool enable) { messageIntegrityEnable = enable; }
+
+  void setTransactionId(uint32_t transId[3]) {
+    transactionId[0] = transId[0];
+    transactionId[1] = transId[1];
+    transactionId[2] = transId[2];
+  }
+
+  void setUsername(const string& u) { username = u; }
+  void setPassword(const string& p) { password = p; }
+  void setRealm(const string& r) { realm = r; }
+
+
+  /*
+  RFC 5766: 4.7.  REQUESTED-TRANSPORT
+   0                   1                   2                   3
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |    Protocol   |                    RFFU                       |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  */
+  void setAttr_REQUESTED_TRANSPORT() {
+    StunAttributeType attrType = StunAttributeType::REQUESTED_TRANSPORT;
+    uint8_t data[] = {0x11, 0, 0, 0};
+    size_t len = 4;
+    addAttr(attrType, data, len);
+  };
+
+  void setAttr_LIFETIME(uint32_t lifeTime) {
+    StunAttributeType attrType = StunAttributeType::LIFETIME;
+
+    uint8_t data[] = {0, 0, 0, 0};
+    data[0] = (uint8_t)((lifeTime >> ((4 - 1) * 8)) & 0xFF);
+    data[1] = (uint8_t)((lifeTime >> ((4 - 1 - 1) * 8)) & 0xFF);
+    data[2] = (uint8_t)((lifeTime >> ((4 - 2 - 1) * 8)) & 0xFF);
+    data[3] = (uint8_t)((lifeTime >> ((4 - 3 - 1) * 8)) & 0xFF);
+
+    size_t len = 4;
+    addAttr(attrType, data, len);
+  };
+
+  void setAttr_USERNAME(const string& uname) {
+    StunAttributeType attrType = StunAttributeType::USERNAME;
+    addAttr(attrType, (uint8_t*)uname.c_str(), uname.size());
+  };
+
+  void setAttr_NONCE(const uint8_t* nonce, size_t len) {
+    StunAttributeType attrType = StunAttributeType::NONCE;
+    addAttr(attrType, nonce, len);
+  };
+
+  void setAttr_REALM(const string& realm) {
+    StunAttributeType attrType = StunAttributeType::NONCE;
+    addAttr(attrType, (uint8_t*)realm.c_str(), realm.size());
+  };
+
 
   std::vector<uint8_t> buildMsg() {
     std::vector<uint8_t> msgData(calcMsgLength());

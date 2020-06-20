@@ -50,4 +50,5 @@ configure_file(
 	@ONLY
 )
 
-add_subdirectory("modules/allocation")
+add_subdirectory("modules/hash")
+add_subdirectory("modules/ice8445")
