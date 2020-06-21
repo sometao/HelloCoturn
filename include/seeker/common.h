@@ -109,7 +109,7 @@ class ByteArray {
       for (size_t i = 0; i < len; ++i) {
         buf[i] = (uint8_t)((num >> (i * 8)) & 0xFF);
       }
-    } else { 
+    } else {
       for (size_t i = 0; i < len; ++i) {
         buf[i] = (uint8_t)((num >> ((len - i - 1) * 8)) & 0xFF);
       }
@@ -125,8 +125,8 @@ class ByteArray {
         num <<= 8;
         num |= (T)(buf[len - 1 - i] & 0xFF);
       }
-    } else { // not tested.
-      for (size_t i = 0; i < len; ++i)  {
+    } else {  // not tested.
+      for (size_t i = 0; i < len; ++i) {
         num <<= 8;
         num |= (T)(buf[i] & 0xFF);
       }
@@ -162,7 +162,45 @@ class ByteArray {
     return result;
   }
 
-  static int SASLprep(uint8_t* src, uint8_t* out) {
+  static std::vector<uint8_t> SASLprep(uint8_t* src) {
+    std::vector<uint8_t> rst;
+    if (src) {
+      uint8_t* strin = src;
+      for (;;) {
+        uint8_t c = *strin;
+        if (!c) {
+          rst.push_back(0);
+          break;
+        }
+        switch (c) {
+          case 0xAD:
+            ++strin;
+            break;
+          case 0xA0:
+          case 0x20:
+            rst.push_back(0x20);
+            ++strin;
+            break;
+          case 0x7F:
+            rst.swap(std::vector<uint8_t>());
+            break;
+          default:
+            if (c < 0x1F) {
+              rst.swap(std::vector<uint8_t>());
+            } else if (c >= 0x80 && c <= 0x9F) {
+              rst.swap(std::vector<uint8_t>());
+            } else {
+              rst.push_back(c);
+              ++strin;
+            }
+        };
+      }
+    }
+
+    return rst;
+  }
+
+  static int SASLprep0(uint8_t* src, uint8_t* out) {
     if (src) {
       uint8_t* strin = src;
       uint8_t* strout = out;

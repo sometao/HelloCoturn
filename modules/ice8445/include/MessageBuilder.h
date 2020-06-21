@@ -6,6 +6,10 @@
 #include "crc32.h"
 #include "md5.h"
 #include "sha1.h"
+
+#include <iomanip>
+
+
 /*
 
 0                   1                   2                   3
@@ -55,10 +59,10 @@ enum class StunMethod {
 };
 
 enum class StunClass {
-  request = 0x01,
-  indication = 0x02,
-  successResponse = 0x03,
-  errorResponse = 0x04
+  request = 0x00,
+  indication = 0x01,
+  successResponse = 0x02,
+  errorResponse = 0x03
 };
 
 
@@ -98,6 +102,7 @@ class MessageBuilder {
   const uint32_t magicCookie = 0x2112A442;
 
   std::unordered_map<uint16_t, vector<uint8_t>> attributes;
+  std::vector<uint16_t> attributesOrder;
 
   std::string username;
   std::string password;
@@ -105,26 +110,44 @@ class MessageBuilder {
 
   // TODO need test.
   void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20]) {
-    MD5 md5;
-    std::vector<uint8_t> passwordVector(password.size());
-    if (ByteArray::SASLprep((uint8_t*)password.c_str(), passwordVector.data()) < 0) {
+    std::cout << "------ genMessageIntegrity 0 -----------" << std::endl;
+
+    std::vector<uint8_t> passwordVector;
+    passwordVector = ByteArray::SASLprep((uint8_t*)password.c_str());
+    if (passwordVector.empty()) {
       throw std::exception("password SASLprep failed.");
     }
+    std::cout << "------ genMessageIntegrity 1 -----------" << std::endl;
 
-    // key = MD5(username ":" realm ":" SASLprep(password))
-    string keyStr{};
-    keyStr += username;
-    keyStr += ":";
-    keyStr += realm;
-    keyStr += ":";
-    keyStr += (char*)passwordVector.data();
 
-    md5.reset();
-    md5.add(keyStr.c_str(), keyStr.size());
-    uint8_t key[16];
-    md5.getHash(key);
-    // out length must be 20 bytes.
-    hmac<SHA1>(data, len, key, 16, out);
+    // long-term credentials
+    // MD5 md5;
+    //// key = MD5(username ":" realm ":" SASLprep(password))
+    // string keyStr{};
+    // keyStr += username;
+    // keyStr += ":";
+    // keyStr += realm;
+    // keyStr += ":";
+    // keyStr += (char*)passwordVector.data();
+    // std::cout << "------ genMessageIntegrity 2 ----------- keyStr:" << keyStr << std::endl;
+    // std::cout << "------ genMessageIntegrity 3 -----------" << std::endl;
+
+    // md5.reset();
+    // md5.add(keyStr.c_str(), keyStr.size());
+    // uint8_t key[16];
+    // md5.getHash(key);
+    //// out length must be 20 bytes.
+    // hmac<SHA1>(data, len, key, 16, out);
+    // std::cout << "------ genMessageIntegrity 4 -----------" << std::endl;
+
+
+
+    // short-term credentials
+    string key((char*)passwordVector.data());
+    std::cout << "------ genMessageIntegrity 3 -----------key:" << key << " size=" << key.size() << std::endl;
+
+    hmac<SHA1>(data, len, key.c_str(), key.size(), out);
+    std::cout << "------ genMessageIntegrity 4 -----------" << std::endl;
   }
 
 
@@ -161,9 +184,12 @@ class MessageBuilder {
     uint16_t typeCode = (uint16_t)attrType;
     if (attributes.find(typeCode) == attributes.end()) {
       std::vector<uint8_t> vec(len);
+      attributesOrder.push_back(typeCode);
       for (int i = 0; i < len; i++) {
         vec.at(i) = data[i];
       }
+      std::cout << "atrr t=" << std::hex << (int)typeCode << std::dec << " len=" << len
+                << " size=" << vec.size() << std::endl;
       attributes.emplace(typeCode, std::move(vec));
     }
   }
@@ -171,7 +197,7 @@ class MessageBuilder {
   void writeHeader(std::vector<uint8_t>& msgData) {
     uint16_t msgType = getMsgType();
     auto dataBuf = msgData.data();
-    ByteArray::writeData(dataBuf + 0, msgType);
+    ByteArray::writeData(dataBuf + 0, msgType, false);
     ByteArray::writeData(dataBuf + 4, magicCookie, false);
     ByteArray::writeData(dataBuf + 8, transactionId[0], false);
     ByteArray::writeData(dataBuf + 12, transactionId[1], false);
@@ -179,7 +205,7 @@ class MessageBuilder {
   }
 
   uint16_t calcMsgLength() {
-    uint16_t len = headerLength;
+    uint16_t len = 0;
 
     for (auto& attr : attributes) {
       auto attrLen = attr.second.size();
@@ -198,15 +224,20 @@ class MessageBuilder {
   }
 
   void writeAttributes(std::vector<uint8_t>& msgData) {
+    std::cout << "------ writeAttributes 0 -----------" << std::endl;
     auto dataBuf = msgData.data();
 
+
     auto bodyBuf = dataBuf + headerLength;
+    std::cout << "------ writeAttributes 1 -----------" << std::endl;
     size_t pos = 0;
-    for (auto& pair : attributes) {
-      uint16_t t = pair.first;
-      vector<uint8_t> v = pair.second;
+
+    for (auto& t : attributesOrder) {
+      vector<uint8_t> v = attributes.at(t);
+
       uint16_t len = (uint16_t)v.size();
       uint8_t padding = paddingLength(len);
+
 
       ByteArray::writeData(bodyBuf + pos, t, false);
       pos += sizeof(t);
@@ -221,18 +252,57 @@ class MessageBuilder {
         ByteArray::writeData(bodyBuf + pos, (uint8_t)0x00);
         pos += 1;
       }
+      std::cout << "------ writeAttributes 3 -----------t= " << std::hex << (t) << std::dec
+                << " len=" << len << " pos=" << pos << std::endl;
     }
+
+    // for (auto& pair : attributes) {
+    //  uint16_t t = pair.first;
+    //  vector<uint8_t> v = pair.second;
+    //  uint16_t len = (uint16_t)v.size();
+    //  uint8_t padding = paddingLength(len);
+
+
+    //  ByteArray::writeData(bodyBuf + pos, t, false);
+    //  pos += sizeof(t);
+
+    //  ByteArray::writeData(bodyBuf + pos, len, false);
+    //  pos += sizeof(len);
+
+    //  ByteArray::writeData(bodyBuf + pos, v.data(), len);
+    //  pos += len;
+
+    //  for (int i = 0; i < padding; ++i) {
+    //    ByteArray::writeData(bodyBuf + pos, (uint8_t)0x00);
+    //    pos += 1;
+    //  }
+    //  std::cout << "------ writeAttributes 3 -----------t= " << std::hex << (t) << std::dec
+    //            << " len=" << len << " pos=" << pos << std::endl;
+    //}
 
     if (messageIntegrityEnable) {
       uint16_t messageIntegrityAttrLength = 2 + 2 + 20;
-      uint16_t dummyMsgLength = headerLength + pos + messageIntegrityAttrLength;
+      uint16_t dummyMsgLength = pos + messageIntegrityAttrLength;
       ByteArray::writeData(dataBuf + 2, dummyMsgLength);
       uint8_t messageIntegrityValue[20];
 
-      genMessageIntegrity(bodyBuf, headerLength + pos, messageIntegrityValue);
+      std::cout << "------ writeAttributes 3.1 -----------" << std::endl;
+      genMessageIntegrity(dataBuf, headerLength + pos, messageIntegrityValue);
+
+      std::cout << std::hex;
+      for (int i = 0; i < 20; i++) {
+        std::cout << std::setw(2) << std::setfill('0') << (int)messageIntegrityValue[i]
+                  << " ";  //
+      }
+
+      std::cout << std::dec << std::endl;
+      std::cout << "------ writeAttributes 3.2 -----------" << std::endl;
 
       uint16_t t = (uint16_t)StunAttributeType::MESSAGE_INTEGRITY;
       uint16_t len = (uint16_t)20;
+
+      std::cout << "------ writeAttributes 3.3.1 ----------- len=" << len << " pos=" << pos
+                << std::endl;
 
       ByteArray::writeData(bodyBuf + pos, t, false);
       pos += sizeof(t);
@@ -240,11 +310,14 @@ class MessageBuilder {
       pos += sizeof(len);
       ByteArray::writeData(bodyBuf + pos, messageIntegrityValue, len);
       pos += len;
+      std::cout << "------ writeAttributes 3.3.2 ----------- len=" << len << " pos=" << pos
+                << std::endl;
     }
+    std::cout << "------ writeAttributes 4 -----------" << std::endl;
 
     if (fingerprintEnable) {  // TODO crc32 need test
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
-      uint16_t msgLength = headerLength + pos + fingerprintAttrLength;
+      uint16_t msgLength = pos + fingerprintAttrLength;
       ByteArray::writeData(dataBuf + 2, msgLength, false);
 
       unsigned char fingerprint[4];
@@ -254,16 +327,17 @@ class MessageBuilder {
       uint16_t t = (uint16_t)StunAttributeType::FINGERPRINT;
       uint16_t len = (uint16_t)sizeof(fingerprint);
 
-      ByteArray::writeData(bodyBuf + pos, t);
+      ByteArray::writeData(bodyBuf + pos, t, false);
       pos += sizeof(t);
-      ByteArray::writeData(bodyBuf + pos, len);
+      ByteArray::writeData(bodyBuf + pos, len, false);
       pos += sizeof(len);
       ByteArray::writeData(bodyBuf + pos, fingerprint, len);
       pos += len;
 
+      std::cout << "------ writeAttributes 5 -----------" << std::endl;
 
     } else {
-      uint16_t msgLength = headerLength + pos;
+      uint16_t msgLength = pos;
       ByteArray::writeData(dataBuf + 2, msgLength);
     }
   }
@@ -282,6 +356,9 @@ class MessageBuilder {
     return msgType;
   }
 
+  void setUsername(const string& u) { username = u; }
+
+  void setRealm(const string& r) { realm = r; }
 
 
  public:
@@ -293,15 +370,13 @@ class MessageBuilder {
 
   void setMessageIntegrity(bool enable) { messageIntegrityEnable = enable; }
 
+  void setPassword(const string& p) { password = p; }
   void setTransactionId(uint32_t transId[3]) {
     transactionId[0] = transId[0];
     transactionId[1] = transId[1];
     transactionId[2] = transId[2];
   }
 
-  void setUsername(const string& u) { username = u; }
-  void setPassword(const string& p) { password = p; }
-  void setRealm(const string& r) { realm = r; }
 
 
   /*
@@ -333,25 +408,32 @@ class MessageBuilder {
   };
 
   void setAttr_USERNAME(const string& uname) {
+    setUsername(uname);
     StunAttributeType attrType = StunAttributeType::USERNAME;
     addAttr(attrType, (uint8_t*)uname.c_str(), uname.size());
   };
 
   void setAttr_NONCE(const uint8_t* nonce, size_t len) {
+    std::cout << "setAttr_NONCE len=" << len << std::endl;
     StunAttributeType attrType = StunAttributeType::NONCE;
     addAttr(attrType, nonce, len);
   };
 
   void setAttr_REALM(const string& realm) {
-    StunAttributeType attrType = StunAttributeType::NONCE;
+    setRealm(realm);
+    StunAttributeType attrType = StunAttributeType::REALM;
     addAttr(attrType, (uint8_t*)realm.c_str(), realm.size());
   };
 
 
   std::vector<uint8_t> buildMsg() {
-    std::vector<uint8_t> msgData(calcMsgLength());
+    std::cout << "------------ buildMsg 0 ---------------" << std::endl;
+    std::vector<uint8_t> msgData((uint32_t)headerLength + calcMsgLength());
+    std::cout << "------------ buildMsg 1 ---------------" << std::endl;
     writeHeader(msgData);
+    std::cout << "------------ buildMsg 2 ---------------" << std::endl;
     writeAttributes(msgData);
+    std::cout << "------------ buildMsg 3 ---------------" << std::endl;
     return msgData;
   };
 };
