@@ -110,7 +110,7 @@ class MessageBuilder {
 
   // TODO need test.
   void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20]) {
-    std::cout << "------ genMessageIntegrity 0 -----------" << std::endl;
+    std::cout << "------ genMessageIntegrity 0 ----------- len=" << len << std::endl;
 
     std::vector<uint8_t> passwordVector;
     passwordVector = ByteArray::SASLprep((uint8_t*)password.c_str());
@@ -121,33 +121,25 @@ class MessageBuilder {
 
 
     // long-term credentials
-    // MD5 md5;
-    //// key = MD5(username ":" realm ":" SASLprep(password))
-    // string keyStr{};
-    // keyStr += username;
-    // keyStr += ":";
-    // keyStr += realm;
-    // keyStr += ":";
-    // keyStr += (char*)passwordVector.data();
-    // std::cout << "------ genMessageIntegrity 2 ----------- keyStr:" << keyStr << std::endl;
-    // std::cout << "------ genMessageIntegrity 3 -----------" << std::endl;
+    MD5 md5;
+    // key = MD5(username ":" realm ":" SASLprep(password))
+    string keyStr{};
+    keyStr += username;
+    keyStr += ":";
+    keyStr += realm;
+    keyStr += ":";
+    keyStr += (char*)passwordVector.data();
+    std::cout << "------ genMessageIntegrity 2 ----------- keyStr:" << keyStr << std::endl;
+    std::cout << "------ genMessageIntegrity 3 -----------" << std::endl;
 
-    // md5.reset();
-    // md5.add(keyStr.c_str(), keyStr.size());
-    // uint8_t key[16];
-    // md5.getHash(key);
-    //// out length must be 20 bytes.
-    // hmac<SHA1>(data, len, key, 16, out);
-    // std::cout << "------ genMessageIntegrity 4 -----------" << std::endl;
-
-
-
-    // short-term credentials
-    string key((char*)passwordVector.data());
-    std::cout << "------ genMessageIntegrity 3 -----------key:" << key << " size=" << key.size() << std::endl;
-
-    hmac<SHA1>(data, len, key.c_str(), key.size(), out);
+    md5.reset();
+    md5.add(keyStr.c_str(), keyStr.size());
+    uint8_t key[16];
+    md5.getHash(key);
+    // out length must be 20 bytes.
+    hmac<SHA1>(data, len, key, 16, out);
     std::cout << "------ genMessageIntegrity 4 -----------" << std::endl;
+
   }
 
 
@@ -283,10 +275,10 @@ class MessageBuilder {
     if (messageIntegrityEnable) {
       uint16_t messageIntegrityAttrLength = 2 + 2 + 20;
       uint16_t dummyMsgLength = pos + messageIntegrityAttrLength;
-      ByteArray::writeData(dataBuf + 2, dummyMsgLength);
+      ByteArray::writeData(dataBuf + 2, dummyMsgLength, false);
       uint8_t messageIntegrityValue[20];
 
-      std::cout << "------ writeAttributes 3.1 -----------" << std::endl;
+      std::cout << "------ writeAttributes 3.1 ----------- dummyMsgLength=" << dummyMsgLength << std::endl;
       genMessageIntegrity(dataBuf, headerLength + pos, messageIntegrityValue);
 
       std::cout << std::hex;
