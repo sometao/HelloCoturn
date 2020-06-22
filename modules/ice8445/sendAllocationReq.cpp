@@ -125,8 +125,8 @@ int main() {
     std::cout << "Got exception: " << ex.what() << std::endl;
   }
 
-  // buildMsgTest1();
-  buildMsgTest2();
+  buildMsgTest1();
+  //buildMsgTest2();
 
   return 0;
 }

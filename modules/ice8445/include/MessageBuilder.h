@@ -148,7 +148,7 @@ class MessageBuilder {
 
     CRC32 crc32Hasher;
 
-    crc32Hasher.add(data, len);
+    crc32Hasher(data, len);
     crc32Hasher.getHash(fingerprint);
 
     fingerprint[0] = fingerprint[0] ^ fingerprintCookie[0];
