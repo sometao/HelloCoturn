@@ -60,23 +60,23 @@ class Secure {
   }
 
 
-  static Botan::secure_vector<Botan::byte> process(std::unique_ptr<HashFunction> hashFunction,
-                                                   const string& target,
-                                                   size_t bufSize) {
-    if (bufSize > 0 || target.length() > 8192) {
-      std::vector<uint8_t> buf(bufSize < 32 ? 4096 : bufSize);
-      std::stringstream ss{target};
-      while (ss.good()) {
-        ss.read(reinterpret_cast<char*>(buf.data()), buf.size());
-        const size_t got = static_cast<size_t>(ss.gcount());
-        hashFunction->update(buf.data(), got);
-      }
-      return hashFunction->final();
-    } else {
-      std::vector<uint8_t> input(target.begin(), target.end());
-      return hashFunction->process(input);
-    }
-  };
+  //static Botan::secure_vector<Botan::byte> process(std::unique_ptr<HashFunction> hashFunction,
+  //                                                 const string& target,
+  //                                                 size_t bufSize) {
+  //  if (bufSize > 0 || target.length() > 8192) {
+  //    std::vector<uint8_t> buf(bufSize < 32 ? 4096 : bufSize);
+  //    std::stringstream ss{target};
+  //    while (ss.good()) {
+  //      ss.read(reinterpret_cast<char*>(buf.data()), buf.size());
+  //      const size_t got = static_cast<size_t>(ss.gcount());
+  //      hashFunction->update(buf.data(), got);
+  //    }
+  //    return hashFunction->final();
+  //  } else {
+  //    std::vector<uint8_t> input(target.begin(), target.end());
+  //    return hashFunction->process(input);
+  //  }
+  //};
 
   //static Botan::secure_vector<Botan::byte> process0(Botan::MDx_HashFunction& hashFunction,
   //                                                 const string& target,
@@ -96,21 +96,21 @@ class Secure {
   //  }
   //};
 
-  static string sha1(const string& target, size_t bufSize = 0) {
-    //Botan::SHA_1 hashFunc;
-    //auto rst = process(hashFunc, target, bufSize);
-    //auto digital = Botan::hex_encode(rst.data(), rst.size());
-    //return digital;
-    std::unique_ptr<HashFunction> sha1Func{ Botan::HashFunction::create("SHA-160") };
-    if(sha1Func == nullptr) {
-      E_LOG("sha1Func == nullptr");
-      return "NULL";
-    }
-    auto rst = process(std::move(sha1Func), target, bufSize);
-    auto digital = Botan::hex_encode(rst.data(), rst.size());
-    return digital;
+  //static string sha1(const string& target, size_t bufSize = 0) {
+  //  //Botan::SHA_1 hashFunc;
+  //  //auto rst = process(hashFunc, target, bufSize);
+  //  //auto digital = Botan::hex_encode(rst.data(), rst.size());
+  //  //return digital;
+  //  std::unique_ptr<HashFunction> sha1Func{ Botan::HashFunction::create("SHA-160") };
+  //  if(sha1Func == nullptr) {
+  //    E_LOG("sha1Func == nullptr");
+  //    return "NULL";
+  //  }
+  //  auto rst = process(std::move(sha1Func), target, bufSize);
+  //  auto digital = Botan::hex_encode(rst.data(), rst.size());
+  //  return digital;
 
-  }
+  //}
 
   //static string sha256(const string& target, size_t bufSize = 0) {
   //  Botan::SHA_256 hashFunc;
@@ -119,18 +119,18 @@ class Secure {
   //  return digital;
   //}
 
-  static string md5(const string& target, size_t bufSize = 0) {
-    //Botan::MD5 md5;
-    //std::unique_ptr<HashFunction> md5Func{ Botan::get_hash("md5") };
-    std::unique_ptr<HashFunction> md5Func{ Botan::HashFunction::create("MD5") };
-    if(md5Func == nullptr) {
-      E_LOG("md5Func == nullptr");
-      return "NULL";
-    }
-    auto rst = process(std::move(md5Func), target, bufSize);
-    auto digital = Botan::hex_encode(rst.data(), rst.size());
-    return digital;
-  }
+  //static string md5(const string& target, size_t bufSize = 0) {
+  //  //Botan::MD5 md5;
+  //  //std::unique_ptr<HashFunction> md5Func{ Botan::get_hash("md5") };
+  //  std::unique_ptr<HashFunction> md5Func{ Botan::HashFunction::create("MD5") };
+  //  if(md5Func == nullptr) {
+  //    E_LOG("md5Func == nullptr");
+  //    return "NULL";
+  //  }
+  //  auto rst = process(std::move(md5Func), target, bufSize);
+  //  auto digital = Botan::hex_encode(rst.data(), rst.size());
+  //  return digital;
+  //}
 };
 
 }  // namespace seeker

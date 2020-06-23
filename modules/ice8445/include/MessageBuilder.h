@@ -89,7 +89,7 @@ enum class StunAttributeType {
 
 
 
-class MessageBuilder {
+class StunMessage {
  private:
   StunMethod msgMethod;
   StunClass msgClass;
@@ -108,12 +108,13 @@ class MessageBuilder {
   std::string password;
   std::string realm;
 
-  // TODO need test.
-  void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20]) {
+  static void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20],
+                                  const std::string& username_, const std::string& password_,
+                                  const std::string& realm_) {
     std::cout << "------ genMessageIntegrity 0 ----------- len=" << len << std::endl;
 
     std::vector<uint8_t> passwordVector;
-    passwordVector = ByteArray::SASLprep((uint8_t*)password.c_str());
+    passwordVector = ByteArray::SASLprep((uint8_t*)password_.c_str());
     if (passwordVector.empty()) {
       throw std::exception("password SASLprep failed.");
     }
@@ -124,9 +125,9 @@ class MessageBuilder {
     MD5 md5;
     // key = MD5(username ":" realm ":" SASLprep(password))
     string keyStr{};
-    keyStr += username;
+    keyStr += username_;
     keyStr += ":";
-    keyStr += realm;
+    keyStr += realm_;
     keyStr += ":";
     keyStr += (char*)passwordVector.data();
     std::cout << "------ genMessageIntegrity 2 ----------- keyStr:" << keyStr << std::endl;
@@ -139,7 +140,6 @@ class MessageBuilder {
     // out length must be 20 bytes.
     hmac<SHA1>(data, len, key, 16, out);
     std::cout << "------ genMessageIntegrity 4 -----------" << std::endl;
-
   }
 
 
@@ -248,38 +248,16 @@ class MessageBuilder {
                 << " len=" << len << " pos=" << pos << std::endl;
     }
 
-    // for (auto& pair : attributes) {
-    //  uint16_t t = pair.first;
-    //  vector<uint8_t> v = pair.second;
-    //  uint16_t len = (uint16_t)v.size();
-    //  uint8_t padding = paddingLength(len);
-
-
-    //  ByteArray::writeData(bodyBuf + pos, t, false);
-    //  pos += sizeof(t);
-
-    //  ByteArray::writeData(bodyBuf + pos, len, false);
-    //  pos += sizeof(len);
-
-    //  ByteArray::writeData(bodyBuf + pos, v.data(), len);
-    //  pos += len;
-
-    //  for (int i = 0; i < padding; ++i) {
-    //    ByteArray::writeData(bodyBuf + pos, (uint8_t)0x00);
-    //    pos += 1;
-    //  }
-    //  std::cout << "------ writeAttributes 3 -----------t= " << std::hex << (t) << std::dec
-    //            << " len=" << len << " pos=" << pos << std::endl;
-    //}
-
     if (messageIntegrityEnable) {
       uint16_t messageIntegrityAttrLength = 2 + 2 + 20;
       uint16_t dummyMsgLength = pos + messageIntegrityAttrLength;
       ByteArray::writeData(dataBuf + 2, dummyMsgLength, false);
       uint8_t messageIntegrityValue[20];
 
-      std::cout << "------ writeAttributes 3.1 ----------- dummyMsgLength=" << dummyMsgLength << std::endl;
-      genMessageIntegrity(dataBuf, headerLength + pos, messageIntegrityValue);
+      std::cout << "------ writeAttributes 3.1 ----------- dummyMsgLength=" << dummyMsgLength
+                << std::endl;
+      genMessageIntegrity(dataBuf, headerLength + pos, messageIntegrityValue, username,
+                          password, realm);
 
       std::cout << std::hex;
       for (int i = 0; i < 20; i++) {
@@ -354,6 +332,119 @@ class MessageBuilder {
 
 
  public:
+  StunMessage() = default;
+
+
+  static int parse(uint8_t* data, size_t len, StunMessage& emptyMsg, bool hasFingerprint,
+                   const std::string& username_ = "", const std::string& password_ = "",
+                   const std::string& realm_ = "") {
+
+    bool checkRst = true;
+    if(hasFingerprint) {
+      if(!checkFingerprint(data, len)) {
+        return -1;
+      }
+    } 
+
+    if(!username_.empty()) {
+      if(!checkMessageIntegrity(data, len, hasFingerprint, username_, password_, realm_)) {
+        return -2;
+      }
+    }
+
+    //TODO to be continue: parse stunMessage;
+
+
+  
+  
+  
+  }
+
+  static bool checkMessageIntegrity(uint8_t* data, size_t len, bool hasFingerprint,
+                                    const std::string& username_, const std::string& password_,
+                                    const std::string& realm_) {
+    uint16_t msgLen;
+    ByteArray::readData(data + 2, msgLen, false);
+
+    if (hasFingerprint && msgLen < 20 + 24 + 8) {
+      return false;
+    } else if (!hasFingerprint && msgLen < 20 + 24) {
+      return false;
+    }
+
+    uint16_t dummyMsgLen;
+    if (hasFingerprint) {
+      dummyMsgLen = msgLen - 8;
+    } else {
+      dummyMsgLen = msgLen;
+    }
+
+    bool checkRst = true;
+
+    ByteArray::writeData(data + 2, dummyMsgLen, false);
+    uint16_t attrType;
+    ByteArray::readData(data + dummyMsgLen - 24, attrType, false);
+    uint16_t attrLen;
+    ByteArray::readData(data + dummyMsgLen - 22, attrLen, false);
+
+    if (attrType != (uint16_t)StunAttributeType::MESSAGE_INTEGRITY || attrLen != 20) {
+      checkRst = false;
+    } else {
+      uint8_t attrValue[20] = {0};
+      ByteArray::readData(data + dummyMsgLen - 20, attrValue, 20);
+
+      uint8_t expectValue[20];
+      genMessageIntegrity(data, dummyMsgLen, expectValue, username_, password_, realm_);
+      for (int i = 0; i < 20; i++) {
+        if (attrValue[i] != expectValue[i]) {
+          checkRst = false;
+          break;
+        }
+      }
+    }
+
+    if (msgLen != dummyMsgLen) {
+      ByteArray::writeData(data + 2, msgLen, false);
+    }
+
+    return checkRst;
+  }
+
+
+  static bool checkFingerprint(uint8_t* data, size_t len) {
+    uint16_t msgLen;
+    ByteArray::readData(data + 2, msgLen, false);
+
+    if (msgLen < 24) {
+      return false;
+    }
+
+    uint16_t attrType;
+    ByteArray::readData(data + msgLen - 8, attrType, false);
+    uint16_t attrLen;
+    ByteArray::readData(data + msgLen - 6, attrLen, false);
+
+
+    if (attrType != (uint16_t)StunAttributeType::FINGERPRINT || attrLen != 4) {
+      return false;
+    }
+
+    uint8_t fingerprint[4] = {0};
+    ByteArray::readData(data + msgLen - 4, fingerprint, 4);
+
+    uint8_t expectFingerprint[4];
+    genFingerprint(data, msgLen - 8, expectFingerprint);
+    for (int i = 0; i < 4; i++) {
+      if (fingerprint[i] != expectFingerprint[i]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+
+
   void setMethod(StunMethod method) { msgMethod = method; }
   void setClass(StunClass clz) { msgClass = clz; }
 
@@ -418,41 +509,14 @@ class MessageBuilder {
   };
 
 
-  std::vector<uint8_t> buildMsg() {
-    std::cout << "------------ buildMsg 0 ---------------" << std::endl;
-    std::vector<uint8_t> msgData((uint32_t)headerLength + calcMsgLength());
-    std::cout << "------------ buildMsg 1 ---------------" << std::endl;
+  std::vector<uint8_t> binary() {
+    std::vector<uint8_t> msgData((size_t)headerLength + calcMsgLength());
     writeHeader(msgData);
-    std::cout << "------------ buildMsg 2 ---------------" << std::endl;
     writeAttributes(msgData);
-    std::cout << "------------ buildMsg 3 ---------------" << std::endl;
     return msgData;
   };
 };
 
 
-
-class StunMessage {
- private:
-  uint8_t* header;
-  uint8_t* body;
-
-  vector<uint8_t> attrRequestedTransport;
-
- public:
-};
-
-
-class AllocationMsg {
- private:
-  uint8_t* data;
-  uint8_t* header;
-  uint8_t* body;
-
-  void writeHeader() {}
-
- public:
-  AllocationMsg(uint8_t* tId, const string& software, int liftTime) {}
-};
 
 }  // namespace HelloCoturn
