@@ -285,7 +285,7 @@ class StunMessage {
     }
     std::cout << "------ writeAttributes 4 -----------" << std::endl;
 
-    if (fingerprintEnable) {  // TODO crc32 need test
+    if (fingerprintEnable) { 
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
       uint16_t msgLength = pos + fingerprintAttrLength;
       ByteArray::writeData(dataBuf + 2, msgLength, false);
@@ -351,6 +351,27 @@ class StunMessage {
         return -2;
       }
     }
+
+
+    //check first 2 bits
+    uint8_t firstTwoBits = data[0] >> 6;
+    if(firstTwoBits != 0) {
+      return -3;
+    }
+
+    //message type pass
+    const uint16_t msgType = ((uint16_t)data[0]) << 8 & data[1];
+    uint16_t method = 0x0000;
+    method = (method << 5) | ((msgType >> 9) & 0x1f);
+    method = (method << 3) | ((msgType >> 5) & 0x07);
+    method = (method << 4) | ((msgType >> 0) & 0x0F);
+    emptyMsg.setMethod((StunMethod)method);
+
+    uint16_t clz = 0x0000;
+    clz = (clz << 1) | ((clz >> 8) & 0x01);
+    clz = (clz << 1) | ((clz >> 4) & 0x01);
+    emptyMsg.setClass((StunClass)clz);
+
 
     //TODO to be continue: parse stunMessage;
 
