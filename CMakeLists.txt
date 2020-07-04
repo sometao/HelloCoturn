@@ -44,11 +44,11 @@ set(SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE)
 set(LOG_FILE_NAME "application.log")
 set(CA_CERT_FILE "./resources/ca-bundle.crt")
 
-configure_file(
-	"./cmake/config.h.in" 
-	"${PROJECT_SOURCE_DIR}/include/config.h"
-	@ONLY
-)
+#configure_file(
+#	"./cmake/config.h.in" 
+#	"${PROJECT_SOURCE_DIR}/include/config.h"
+#	@ONLY
+#)
 
 add_subdirectory("modules/hash")
 add_subdirectory("modules/ice8445")

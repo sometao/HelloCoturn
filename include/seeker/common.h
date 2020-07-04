@@ -145,7 +145,12 @@ class ByteArray {
       data[i] = *(src + i);
     }
   }
-
+  
+  static void readData(uint8_t* src, std::vector<uint8_t>& data, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+      data.emplace_back(*(src+i));
+    }
+  }
 
   //// convert from hex to binary
   static std::vector<uint8_t> hex2bin(const std::string& hex) {

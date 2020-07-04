@@ -2,6 +2,7 @@
 #include <vector>
 #include <unordered_map>
 #include "seeker/common.h"
+#include "seeker/logger.h"
 #include "hmac.h"
 #include "crc32.h"
 #include "md5.h"
@@ -98,15 +99,16 @@ class StunMessage {
   bool fingerprintEnable;
   bool messageIntegrityEnable;
 
-  const uint16_t headerLength = 20;
-  const uint32_t magicCookie = 0x2112A442;
+  static const uint16_t headerLength = 20;
+  static const uint32_t magicCookie = 0x2112A442;
 
   std::unordered_map<uint16_t, vector<uint8_t>> attributes;
   std::vector<uint16_t> attributesOrder;
 
-  std::string username;
   std::string password;
-  std::string realm;
+
+  // std::string username;
+  // std::string realm;
 
   static void genMessageIntegrity(const uint8_t* data, size_t len, uint8_t out[20],
                                   const std::string& username_, const std::string& password_,
@@ -174,6 +176,7 @@ class StunMessage {
     }
 
     uint16_t typeCode = (uint16_t)attrType;
+
     if (attributes.find(typeCode) == attributes.end()) {
       std::vector<uint8_t> vec(len);
       attributesOrder.push_back(typeCode);
@@ -183,6 +186,18 @@ class StunMessage {
       std::cout << "atrr t=" << std::hex << (int)typeCode << std::dec << " len=" << len
                 << " size=" << vec.size() << std::endl;
       attributes.emplace(typeCode, std::move(vec));
+    }
+  }
+
+  std::vector<uint8_t> getAttr(StunAttributeType attrType) {
+    uint16_t typeCode = (uint16_t)attrType;
+    auto pair = attributes.find(typeCode);
+    if (pair != attributes.end()) {
+      std::vector<uint8_t> value{pair->second};
+      return value;
+    } else {
+      std::vector<uint8_t> value(0);
+      return value;
     }
   }
 
@@ -256,6 +271,13 @@ class StunMessage {
 
       std::cout << "------ writeAttributes 3.1 ----------- dummyMsgLength=" << dummyMsgLength
                 << std::endl;
+
+      auto vec = getAttr(StunAttributeType::USERNAME);
+      string username = std::string((char*)vec.data(), vec.size());
+
+      vec = getAttr(StunAttributeType::REALM);
+      string realm = std::string((char*)vec.data(), vec.size());
+
       genMessageIntegrity(dataBuf, headerLength + pos, messageIntegrityValue, username,
                           password, realm);
 
@@ -285,7 +307,7 @@ class StunMessage {
     }
     std::cout << "------ writeAttributes 4 -----------" << std::endl;
 
-    if (fingerprintEnable) { 
+    if (fingerprintEnable) {
       uint16_t fingerprintAttrLength = 2 + 2 + 4;
       uint16_t msgLength = pos + fingerprintAttrLength;
       ByteArray::writeData(dataBuf + 2, msgLength, false);
@@ -326,9 +348,6 @@ class StunMessage {
     return msgType;
   }
 
-  void setUsername(const string& u) { username = u; }
-
-  void setRealm(const string& r) { realm = r; }
 
 
  public:
@@ -338,47 +357,115 @@ class StunMessage {
   static int parse(uint8_t* data, size_t len, StunMessage& emptyMsg, bool hasFingerprint,
                    const std::string& username_ = "", const std::string& password_ = "",
                    const std::string& realm_ = "") {
-
     bool checkRst = true;
-    if(hasFingerprint) {
-      if(!checkFingerprint(data, len)) {
+    if (hasFingerprint) {
+      if (!checkFingerprint(data, len)) {
         return -1;
       }
-    } 
+    }
 
-    if(!username_.empty()) {
-      if(!checkMessageIntegrity(data, len, hasFingerprint, username_, password_, realm_)) {
+    if (!username_.empty()) {
+      if (!checkMessageIntegrity(data, len, hasFingerprint, username_, password_, realm_)) {
         return -2;
       }
     }
 
 
-    //check first 2 bits
+    // check first 2 bits
     uint8_t firstTwoBits = data[0] >> 6;
-    if(firstTwoBits != 0) {
+    if (firstTwoBits != 0) {
       return -3;
     }
 
-    //message type pass
-    const uint16_t msgType = ((uint16_t)data[0]) << 8 & data[1];
+    // message type pass
+    const uint16_t msgType = ((uint16_t)data[0]) << 8 | data[1];
+    I_LOG("parse msgType = {}", (int)msgType);
+
+
     uint16_t method = 0x0000;
     method = (method << 5) | ((msgType >> 9) & 0x1f);
     method = (method << 3) | ((msgType >> 5) & 0x07);
     method = (method << 4) | ((msgType >> 0) & 0x0F);
+
+    D_LOG("parse method = {}", method);
+
     emptyMsg.setMethod((StunMethod)method);
 
     uint16_t clz = 0x0000;
-    clz = (clz << 1) | ((clz >> 8) & 0x01);
-    clz = (clz << 1) | ((clz >> 4) & 0x01);
+    clz = (clz << 1) | ((msgType >> 8) & 0x01);
+    clz = (clz << 1) | ((msgType >> 4) & 0x01);
+    D_LOG("parse clz = {}", clz);
     emptyMsg.setClass((StunClass)clz);
 
 
-    //TODO to be continue: parse stunMessage;
+    uint16_t msgLen = ((uint16_t)data[2]) << 8 & data[3];
+
+    uint32_t cookie = ((uint32_t)data[4] << 24) | ((uint32_t)data[5] << 16) |
+                      ((uint32_t)data[6] << 8) | data[7];
+    if (cookie != StunMessage::magicCookie) {
+      return -4;
+    }
+
+    // set trans id.
+    uint32_t transId[3];
+    ByteArray::readData(data + 8, transId[0], false);
+    ByteArray::readData(data + 12, transId[1], false);
+    ByteArray::readData(data + 16, transId[2], false);
+    emptyMsg.setTransactionId(transId);
 
 
-  
-  
-  
+    {  // attributors
+      auto bodyBuf = data + StunMessage::headerLength;
+      int pos = 0;
+
+      std::unordered_map<uint16_t, vector<uint8_t>> attrs;
+      std::vector<uint16_t> order;
+
+      uint16_t attrType = 0;
+
+      while (pos + 4 < msgLen) {
+        ByteArray::readData(bodyBuf + pos, attrType, false);
+        pos += sizeof(attrType);
+
+        // get attr type
+        StunAttributeType stunAttrType = (StunAttributeType)attrType;
+
+        // if fingerprint or message integrity, then break.
+        if (stunAttrType == StunAttributeType::FINGERPRINT ||
+            stunAttrType == StunAttributeType::MESSAGE_INTEGRITY || attrType == 0) {
+          // parse attribute finish.
+          break;
+        }
+
+        uint16_t len = 0;
+        ByteArray::readData(bodyBuf + pos, len, false);
+        pos += sizeof(len);
+
+        std::vector<uint8_t> data(len);
+        ByteArray::readData(bodyBuf + pos, data, len);
+        pos += len;
+
+        uint8_t padding = paddingLength(len);
+        pos += padding;
+
+
+        if (attrs.find(attrType) == attrs.end()) {
+          std::vector<uint8_t> vec(len);
+          order.push_back(attrType);
+          for (int i = 0; i < len; i++) {
+            vec.at(i) = data[i];
+          }
+          attrs.emplace(attrType, std::move(vec));
+        }
+      }
+
+      emptyMsg.attributes = attrs;
+      emptyMsg.attributesOrder = order;
+    }
+
+    return 0;
+
+    // TODO to be continue: parse stunMessage;
   }
 
   static bool checkMessageIntegrity(uint8_t* data, size_t len, bool hasFingerprint,
@@ -435,26 +522,24 @@ class StunMessage {
   static bool checkFingerprint(uint8_t* data, size_t len) {
     uint16_t msgLen;
     ByteArray::readData(data + 2, msgLen, false);
-
-    if (msgLen < 24) {
+    if (msgLen < 8) {
       return false;
     }
 
+    uint8_t* bodyData = data + headerLength;
     uint16_t attrType;
-    ByteArray::readData(data + msgLen - 8, attrType, false);
+    ByteArray::readData(bodyData + msgLen - 8, attrType, false);
     uint16_t attrLen;
-    ByteArray::readData(data + msgLen - 6, attrLen, false);
-
-
+    ByteArray::readData(bodyData + msgLen - 6, attrLen, false);
     if (attrType != (uint16_t)StunAttributeType::FINGERPRINT || attrLen != 4) {
       return false;
     }
 
     uint8_t fingerprint[4] = {0};
-    ByteArray::readData(data + msgLen - 4, fingerprint, 4);
+    ByteArray::readData(bodyData + msgLen - 4, fingerprint, 4);
 
     uint8_t expectFingerprint[4];
-    genFingerprint(data, msgLen - 8, expectFingerprint);
+    genFingerprint(data, headerLength + msgLen - 8, expectFingerprint);
     for (int i = 0; i < 4; i++) {
       if (fingerprint[i] != expectFingerprint[i]) {
         return false;
@@ -467,14 +552,18 @@ class StunMessage {
 
 
   void setMethod(StunMethod method) { msgMethod = method; }
+
   void setClass(StunClass clz) { msgClass = clz; }
 
+  StunMethod getMethod() { return msgMethod; }
+  StunClass getClass() { return msgClass; }
 
   void setFingerprint(bool enable) { fingerprintEnable = enable; }
 
   void setMessageIntegrity(bool enable) { messageIntegrityEnable = enable; }
 
   void setPassword(const string& p) { password = p; }
+
   void setTransactionId(uint32_t transId[3]) {
     transactionId[0] = transId[0];
     transactionId[1] = transId[1];
@@ -512,10 +601,17 @@ class StunMessage {
   };
 
   void setAttr_USERNAME(const string& uname) {
-    setUsername(uname);
     StunAttributeType attrType = StunAttributeType::USERNAME;
     addAttr(attrType, (uint8_t*)uname.c_str(), uname.size());
   };
+
+  const string getAttr_USERNAME() {
+    StunAttributeType attrType = StunAttributeType::USERNAME;
+    std::vector<uint8_t> value = getAttr(attrType);
+    return string((char*)value.data(), value.size());
+  }
+
+  // TODO get attr
 
   void setAttr_NONCE(const uint8_t* nonce, size_t len) {
     std::cout << "setAttr_NONCE len=" << len << std::endl;
@@ -524,7 +620,6 @@ class StunMessage {
   };
 
   void setAttr_REALM(const string& realm) {
-    setRealm(realm);
     StunAttributeType attrType = StunAttributeType::REALM;
     addAttr(attrType, (uint8_t*)realm.c_str(), realm.size());
   };
